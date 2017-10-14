@@ -16,7 +16,7 @@ func main() {
 	var port int
 	var consulBaseURL string
 
-	flag.IntVar(&port, "port", 8502, "Port number to bind to")
+	flag.IntVar(&port, "port", 3500, "Port number to bind to")
 	flag.StringVar(&consulBaseURL, "consul", "http://127.0.0.1:8500", "Consul base url, ie: http://consul.acme.com")
 
 	flag.Parse()
