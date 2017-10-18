@@ -1,8 +1,9 @@
 package convoy
 
 import (
+	"encoding/json"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
@@ -13,21 +14,77 @@ const (
 	consulUnavailable          = "Consul service unavailable"
 )
 
+type ConsulServices []ConsulService
+
+func (c ConsulServices) ToHosts() []Host {
+	hosts := []Host{}
+	for _, service := range c {
+		hosts = append(hosts, Host{
+			IPAddress: service.Address,
+			Port:      service.ServicePort,
+			Tags:      service.ToTags(),
+		})
+	}
+	return hosts
+}
+
+type ConsulService struct {
+	Address     string
+	Datacenter  string
+	ServiceName string
+	ServicePort int
+	ServiceTags []string
+}
+
+func (c *ConsulService) ToTags() Tags {
+	tags := Tags{}
+	for _, tag := range c.ServiceTags {
+		// TODO : Example
+		if strings.HasPrefix(tag, "az-") {
+			tags.AZ = tag
+		}
+	}
+	return tags
+}
+
 func (s *Server) registration(w http.ResponseWriter, r *http.Request) {
 	path := strings.Split(r.URL.Path, "/")
 	svcName := path[len(path)-1]
 
 	resp, err := s.consulClient.Get(
-		fmt.Sprintf("%s/%s/%s", s.ConsulBaseUrl, consulServiceDiscoveryPath, svcName))
+		fmt.Sprintf("%s/%s/%s", s.ConsulBaseURL, consulServiceDiscoveryPath, svcName))
 
 	if err != nil {
-		log.Printf("Service discovery call failed at %s: %s", s.ConsulBaseUrl.String(), err.Error())
-		w.WriteHeader(500)
-		w.Write([]byte(consulUnavailable))
+		s.error(w, r, fmt.Sprintf("Service discovery call failed at %s: %s", s.ConsulBaseURL.String(), err.Error()))
 		return
 	}
 
-	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		s.error(w, r, fmt.Sprintf("Service discovery call failed at %s: %s", s.ConsulBaseURL.String(), err.Error()))
+		return
+	}
+
+	var consulService ConsulServices
+	err = json.Unmarshal(data, &consulService)
+	if err != nil {
+		s.error(w, r, fmt.Sprintf("Failed to unmarshal JSON : %s", err.Error()))
+		return
+	}
+
+	hosts := consulService.ToHosts()
+	hostsBytes, err := json.Marshal(hosts)
+	if err != nil {
+		s.error(w, r, fmt.Sprintf("Failed to marshal JSON : %s", err.Error()))
+		return
+	}
+
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	w.Write(hostsBytes)
+}
+
+func (s *Server) error(w http.ResponseWriter, r *http.Request, msg string) {
+	log.Printf(msg)
+	w.WriteHeader(500)
+	w.Write([]byte(consulUnavailable))
 }

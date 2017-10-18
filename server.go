@@ -10,16 +10,16 @@ import (
 // Server is the convoy server, a shim between Envoy and Consul
 type Server struct {
 	Port          int
-	ConsulBaseUrl *url.URL
+	ConsulBaseURL *url.URL
 	consulClient  *http.Client
 	srv           *http.Server
 }
 
 // NewServer creates a Convoy server
-func NewServer(port int, consulBaseUrl *url.URL) *Server {
+func NewServer(port int, consulBaseURL *url.URL) *Server {
 	return &Server{
 		Port:          port,
-		ConsulBaseUrl: consulBaseUrl,
+		ConsulBaseURL: consulBaseURL,
 		consulClient:  &http.Client{},
 	}
 }
