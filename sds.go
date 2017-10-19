@@ -1,5 +1,9 @@
 package convoy
 
+type SDSResp struct {
+	Hosts []Host `json:"hosts"`
+}
+
 type Host struct {
 	IPAddress string `json:"ip_address"`
 	Port      int    `json:"port"`

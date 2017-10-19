@@ -16,16 +16,17 @@ const (
 
 type ConsulServices []ConsulService
 
-func (c ConsulServices) ToHosts() []Host {
-	hosts := []Host{}
+func (c ConsulServices) ToHosts() SDSResp {
+	sdsResp := SDSResp{}
+
 	for _, service := range c {
-		hosts = append(hosts, Host{
+		sdsResp.Hosts = append(sdsResp.Hosts, Host{
 			IPAddress: service.Address,
 			Port:      service.ServicePort,
 			Tags:      service.ToTags(),
 		})
 	}
-	return hosts
+	return sdsResp
 }
 
 type ConsulService struct {
