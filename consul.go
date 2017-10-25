@@ -1,91 +1,48 @@
 package convoy
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"strings"
+	"time"
+
+	consulapi "github.com/hashicorp/consul/api"
 )
 
 const (
-	consulServiceDiscoveryPath = "v1/catalog/service/"
-	consulUnavailable          = "Consul service unavailable"
+	consulUnavailable = "Consul service unavailable"
 )
 
-type ConsulServices []ConsulService
+func (s *Server) GetConsulKeys() {
 
-func (c ConsulServices) ToHosts() SDSResp {
-	sdsResp := SDSResp{}
+	ticker := time.NewTicker(time.Millisecond * 500)
 
-	for _, service := range c {
-		sdsResp.Hosts = append(sdsResp.Hosts, Host{
-			IPAddress: service.Address,
-			Port:      service.ServicePort,
-			Tags:      service.ToTags(),
-		})
-	}
-	return sdsResp
-}
+	kv := s.ConsulAPI.KV()
 
-type ConsulService struct {
-	Address     string
-	Datacenter  string
-	ServiceName string
-	ServicePort int
-	ServiceTags []string
-}
+	for range ticker.C {
 
-func (c *ConsulService) ToTags() Tags {
-	tags := Tags{}
-	for _, tag := range c.ServiceTags {
-		// TODO : Example
-		if strings.HasPrefix(tag, "az-") {
-			tags.AZ = tag
+		log.Println("Fetching consul keys")
+
+		kvPairs, queryMeta, err := kv.List("convoy", &s.QueryOptions)
+		if err != nil {
+
 		}
+		s.QueryOptions.WaitIndex = queryMeta.LastIndex
+
+		log.Println(fmt.Sprintf("Found %d keys in Consul", len(kvPairs)))
+
+		s.ConsulKeys.Lock()
+
+		s.ConsulKeys.Keys = map[string]consulapi.KVPairs{}
+
+		for _, kv := range kvPairs {
+			// 'convoy/<service_name>/<cds,rds,sds>/*'
+			names := strings.Split(kv.Key, "/")
+			serviceName := names[1]
+			log.Println(fmt.Sprintf("Processing service %s", serviceName))
+			s.ConsulKeys.Keys[serviceName] = append(s.ConsulKeys.Keys[serviceName], kv)
+		}
+
+		s.ConsulKeys.Unlock()
 	}
-	return tags
-}
-
-func (s *Server) registration(w http.ResponseWriter, r *http.Request) {
-	path := strings.Split(r.URL.Path, "/")
-	svcName := path[len(path)-1]
-
-	resp, err := s.consulClient.Get(
-		fmt.Sprintf("%s/%s/%s", s.ConsulBaseURL, consulServiceDiscoveryPath, svcName))
-
-	if err != nil {
-		s.error(w, r, fmt.Sprintf("Service discovery call failed at %s: %s", s.ConsulBaseURL.String(), err.Error()))
-		return
-	}
-
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		s.error(w, r, fmt.Sprintf("Service discovery call failed at %s: %s", s.ConsulBaseURL.String(), err.Error()))
-		return
-	}
-
-	var consulService ConsulServices
-	err = json.Unmarshal(data, &consulService)
-	if err != nil {
-		s.error(w, r, fmt.Sprintf("Failed to unmarshal JSON : %s", err.Error()))
-		return
-	}
-
-	hosts := consulService.ToHosts()
-	hostsBytes, err := json.Marshal(hosts)
-	if err != nil {
-		s.error(w, r, fmt.Sprintf("Failed to marshal JSON : %s", err.Error()))
-		return
-	}
-
-	w.WriteHeader(resp.StatusCode)
-	w.Write(hostsBytes)
-}
-
-func (s *Server) error(w http.ResponseWriter, r *http.Request, msg string) {
-	log.Printf(msg)
-	w.WriteHeader(500)
-	w.Write([]byte(consulUnavailable))
 }
